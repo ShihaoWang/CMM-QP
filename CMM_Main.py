@@ -278,32 +278,26 @@ def QP_Controller(self):
     l = np.hstack([l1, l2, l3, l4, l5])
     u = np.hstack([u1, u2, u3, u4, u5])
 
-    K = 5
+    K = 5  
 
     # Now it is the test of the second objective function
-    M_left = np.eye(self.State_Number)
-    M_right = np.zeros((self.State_Number, self.m - self.State_Number))
+    M_left = np.eye(6)
+    M_right = np.zeros((6, 150))
 
     M = np.hstack((M_left, M_right))
-    M_trans = M.transpose().copy()
 
-    P = np.dot(-np.transpose(M), M)
+    P = np.dot(np.transpose(M), M)
     P_sp = sparse.csc_matrix(P)
-    M_trans_sp = sparse.csc_matrix(M_trans)
 
-    qdot = sim_robot.getVelocity()
-    qdot_array = K * np.array(qdot)
-    Q = M_trans.dot(qdot_array)
-    Q = Q.transpose()
     # Q_T_sp = sparse.csc_matrix(Q_T)
     # ipdb.set_trace()
 
-    # q = np.zeros(self.m)
+    q = np.zeros(self.m)
 
     prob = osqp.OSQP()
 
     # Setup workspace
-    prob.setup(P_sp, Q, Cons, l, u)
+    prob.setup(P_sp, q, Cons, l, u)
 
     # Solve problem
     res = prob.solve()

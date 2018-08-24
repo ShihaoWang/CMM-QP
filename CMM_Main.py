@@ -82,22 +82,39 @@ class MyGLViewer(GLSimulationProgram):
 
         P = sparse.csc_matrix((Data_List,(Row_List,Col_List)), shape=(self.m,self.m))
 
-        # The last part is the read the torque limit
+        # The next part is the read the torque limit
         TorqueLimits =  self.sim_robot.getTorqueLimits() # From the output, it is clear that the first 6 components are related to the COM
         TorqueLimits = TorqueLimits[6:]
         self.low_torque = -np.array(TorqueLimits)
         self.hgh_torque = np.array(TorqueLimits)
+
+        # The next part is the acceleration limit
+        AccLimits =  self.sim_robot.getAccelerationLimits() # From the output, it is clear that the first 6 components are related to the COM
+        self.low_acc = -np.array(AccLimits)
+        self.hgh_acc = np.array(AccLimits)
 
         self.P = P
 
     def control_loop(self):
         # The first simple test is a QP stabilizer to maintain the robot's configuration at the current setting
 
-        QP_Controller(self)
+        qddot_t, beta_t, lamda_t, tau_t = QP_Controller(self)
 
         #Put your control handler here
         sim = self.sim
-        starttime = 2.0
+        tau_t_list = tau_t.tolist()
+        # ipdb.set_trace()
+
+        torque_t = [ 0, 0,  0,  0,  0,  0]
+        torque_t = []
+        for i in range(0,tau_t.size):
+            torque_t.append(tau_t[i])
+
+
+        sim.controller(0).setTorque(torque_t)
+        # ipdb.set_trace()
+
+
         # if sim.getTime() > starttime:
         #     q=sim.controller(0).getCommandedConfig()
         #     q[7]-=1.0
@@ -235,7 +252,6 @@ def QP_Controller(self):
     Constraint_Pyramid_sp = sparse.csc_matrix(Constraint_Pyramid)
 
     Cons2_B = Constraint_Pyramid_sp.copy()
-    # ipdb.set_trace()
 
     for i in range(0, self.Cont_Force_Number-1):
         Cons2_B = sparse.block_diag((Cons2_B, Constraint_Pyramid_sp), format='csc')
@@ -243,7 +259,7 @@ def QP_Controller(self):
     Cons2_C = sparse.eye(3 * self.Cont_Force_Number)
     Cons2_D = sparse.csc_matrix((3* self.Cont_Force_Number, self.State_Number - 6))
 
-    Cons2 = sparse.hstack((Cons2_A, Cons2_B, Cons2_C, Cons2_D)).tocsc()
+    Cons2 = sparse.hstack((Cons2_A, Cons2_B, -Cons2_C, Cons2_D)).tocsc()
     l2 = np.zeros(3* self.Cont_Force_Number)
     u2 = np.zeros(3* self.Cont_Force_Number)
 
@@ -267,22 +283,28 @@ def QP_Controller(self):
     l4 = np.zeros(3 * self.Cont_Force_Number)
     u4 = np.zeros(3 * self.Cont_Force_Number)
 
-    # The last constraint is the torque limit constraint
+    # The five constraint is the torque limit constraint
     Cons5 = sparse.hstack((sparse.csc_matrix(( self.State_Number - 6, self.m - self.State_Number + 6)), sparse.eye(self.State_Number - 6))).tocsc()
 
     l5 = self.low_torque
     u5 = self.hgh_torque
 
+    # The six constraint is the acceleration limit
+    Cons6 = sparse.hstack((sparse.eye(self.State_Number), sparse.csc_matrix((self.State_Number, self.m - self.State_Number)))).tocsc()
+    l6 = self.low_acc
+    u6 = self.hgh_acc
 
-    Cons = sparse.vstack((Cons1, Cons2, Cons3, Cons4, Cons5)).tocsc()
-    l = np.hstack([l1, l2, l3, l4, l5])
-    u = np.hstack([u1, u2, u3, u4, u5])
 
-    K = 5  
+
+    Cons = sparse.vstack((Cons1, Cons2, Cons3, Cons4, Cons5, Cons6)).tocsc()
+    l = np.hstack([l1, l2, l3, l4, l5, l6])
+    u = np.hstack([u1, u2, u3, u4, u5, u6])
+
+    K = 5
 
     # Now it is the test of the second objective function
-    M_left = np.eye(6)
-    M_right = np.zeros((6, 150))
+    M_left = np.eye(2)
+    M_right = np.zeros((2, 154))
 
     M = np.hstack((M_left, M_right))
 
@@ -302,7 +324,7 @@ def QP_Controller(self):
     # Solve problem
     res = prob.solve()
 
-    ipdb.set_trace()
+    # ipdb.set_trace()
 
     soln = res.x
 
@@ -324,10 +346,19 @@ def QP_Controller(self):
     C_q_qdot_G_q = C_q_qdot_sp + G_q_sp
     Jac_T_Lamda = np.dot(Jac_q_T_Matrix, lamda)
     B_Tau = -np.dot(Neg_B_sp.todense(), tau)
-
     dyn_val = D_q_qddot + C_q_qdot_G_q - Jac_T_Lamda - B_Tau
 
-    ipdb.set_trace()
+    # 2. Beta coefficient to lamda
+    lamda_beta = []
+    for i in range(0, self.Cont_Force_Number):
+        beta_i = beta[(i*self.Beta_Number):((i+1)*self.Beta_Number)]
+        lamda_beta_i = np.dot(Constraint_Pyramid, beta_i)
+        if i == 0:
+            lamda_beta = lamda_beta_i.copy()
+        else:
+            lamda_beta = np.append(lamda_beta, lamda_beta_i)
+
+    return qddot, beta, lamda, tau
 
 
 def Constraint_Force_Selection_Matrix(sigma):

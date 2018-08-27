@@ -1,8 +1,6 @@
 import osqp
-import numpy as np
-import scipy as sp
 import scipy.sparse as sparse
-import ipdb
+import numpy as np
 
 # Define problem data
 P = sparse.csc_matrix([[4, 1], [1, 2]])
@@ -20,4 +18,3 @@ prob.setup(P, q, A, l, u, alpha=1.0)
 # Solve problem
 res = prob.solve()
 
-ipdb.set_trace()

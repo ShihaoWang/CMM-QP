@@ -5,7 +5,7 @@ import osqp
 import sys, os
 from klampt import *
 from klampt import vis
-from klampt.vis import GLSimulationProgram
+from klampt.vis import GLSimulationPlugin
 import numpy as np
 sys.path.insert(0, '/home/shihao/trajOptLib')
 from trajOptLib.io import getOnOffArgs
@@ -27,7 +27,7 @@ eps_dist = 0.005
 Terr_No = 0             # Number of Terrains in the current simulation
 mu = 0.35               # The default friction coefficient
 
-class MyGLViewer(GLSimulationProgram):
+class MyGLViewer(GLSimulationPlugin):
     def __init__(self, world, Init_Config, Init_Velocity, Init_Sigma):
         #create a world from the given files
         self.world = world
@@ -37,7 +37,7 @@ class MyGLViewer(GLSimulationProgram):
         robot.setConfig(Init_Config)
         robot.setVelocity(Init_Velocity)
 
-        GLSimulationProgram.__init__(self,world,"Simuation program of the centroidal momentum controller")
+        GLSimulationPlugin.__init__(self,world)
 
         self.Beta_Number = 6
         beta_array = np.zeros(self.Beta_Number)
@@ -110,8 +110,22 @@ class MyGLViewer(GLSimulationProgram):
         for i in range(0,tau_t.size):
             torque_t.append(tau_t[i])
 
+        dt = 0.02
+        # After knowing the sampling rate dt = 0.02
 
-        sim.controller(0).setTorque(torque_t)
+        Pos_t = np.array(self.sim_robot.getConfig())
+        Vel_t = np.array(self.sim_robot.getVelocity())
+        Acc_t = qddot_t
+
+        Pos_tp1 = Pos_t + dt * Vel_t + 1/2 * dt * dt * Acc_t
+        Vel_tp1 = Vel_t + dt * Acc_t
+
+
+
+        sim.controller(0).addMilestone(Pos_tp1, Vel_tp1)
+
+
+        # sim.controller(0).setTorque(torque_t)
         # ipdb.set_trace()
 
 
@@ -137,14 +151,14 @@ class MyGLViewer(GLSimulationProgram):
         #the current example prints out the list of objects clicked whenever
         #you right click
         print "mouse",button,state,x,y
-        if button==2:
-            if state==0:
-                print [o.getName() for o in self.click_world(x,y)]
-            return
-        GLSimulationProgram.mousefunc(self,button,state,x,y)
+        # if button==2:
+        #     if state==0:
+        #         print [o.getName() for o in self.click_world(x,y)]
+        #     return
+        GLSimulationPlugin.mousefunc(self,button,state,x,y)
 
     def motionfunc(self,x,y,dx,dy):
-        return GLSimulationProgram.motionfunc(self,x,y,dx,dy)
+        return GLSimulationPlugin.motionfunc(self,x,y,dx,dy)
 
 def Diagnal2DRC(Diag_List):
     # This function is used to calculate the row, column for the diagnol list
@@ -294,11 +308,20 @@ def QP_Controller(self):
     l6 = self.low_acc
     u6 = self.hgh_acc
 
+    # The seventh constraint is the acceleration at the end effector
+    Cons7_A_left = Jacobian_Selection_Matrix(sigma).todense()
+    Cons7_A_right = np.array(Contact_Jacobian_Matrix(sim_robot))
+    Cons7_A = np.dot(Cons7_A_left, Cons7_A_right)
+    Cons7_B = sparse.csc_matrix((3 * self.Cont_Force_Number, self.m - self.State_Number))
+    Cons7 = sparse.hstack((Cons7_A, Cons7_B)).tocsc()
+    l7 = np.zeros(3 * self.Cont_Force_Number)
+    u7 = np.zeros(3 * self.Cont_Force_Number)
 
+    # The seventh constraint is at the acceleration which means that we would like the end effectors to have zero acceleration
 
-    Cons = sparse.vstack((Cons1, Cons2, Cons3, Cons4, Cons5, Cons6)).tocsc()
-    l = np.hstack([l1, l2, l3, l4, l5, l6])
-    u = np.hstack([u1, u2, u3, u4, u5, u6])
+    Cons = sparse.vstack((Cons1, Cons2, Cons3, Cons4, Cons5, Cons6, Cons7)).tocsc()
+    l = np.hstack([l1, l2, l3, l4, l5, l6, l7])
+    u = np.hstack([u1, u2, u3, u4, u5, u6, u7])
 
     K = 5
 
@@ -358,8 +381,52 @@ def QP_Controller(self):
         else:
             lamda_beta = np.append(lamda_beta, lamda_beta_i)
 
+    # ipdb.set_trace()
+
+    print np.dot(Cons7_A_right, qddot)
+
     return qddot, beta, lamda, tau
 
+def Jacobian_Selection_Matrix(sigma):
+    # This function is used to select the specific component of the Jacobian matrix
+    Status_List = []
+    # Left foot force
+    if sigma[0] == 1:
+        for i in range(0, 12):
+            Status_List.append(1)
+    else:
+        for i in range(0, 12):
+            Status_List.append(0)
+
+    # Right foot force
+    if sigma[1] == 1:
+        for i in range(0, 12):
+            Status_List.append(1)
+    else:
+        for i in range(0, 12):
+            Status_List.append(0)
+
+    # Left hand force
+    if sigma[2] == 1:
+        for i in range(0, 3):
+            Status_List.append(1)
+    else:
+        for i in range(0, 3):
+            Status_List.append(0)
+
+    # Right hand force
+    if sigma[3] == 1:
+        for i in range(0, 3):
+            Status_List.append(1)
+    else:
+        for i in range(0, 3):
+            Status_List.append(0)
+
+    Data_List, Row_List, Col_List = Diagnal2DRC(Status_List)
+
+    M = sparse.csc_matrix((Data_List,(Row_List,Col_List)), shape=(len(Status_List), len(Status_List)))
+
+    return M
 
 def Constraint_Force_Selection_Matrix(sigma):
     # This function is used to select the specific component of the constraint force and set them to zero

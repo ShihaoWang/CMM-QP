@@ -121,11 +121,11 @@ class MyGLViewer(GLSimulationPlugin):
         Vel_tp1 = Vel_t + dt * Acc_t
 
 
+        # sim.controller(0).setTorque(torque_t)
 
         sim.controller(0).addMilestone(Pos_tp1, Vel_tp1)
 
 
-        # sim.controller(0).setTorque(torque_t)
         # ipdb.set_trace()
 
 
@@ -326,8 +326,8 @@ def QP_Controller(self):
     K = 5
 
     # Now it is the test of the second objective function
-    M_left = np.eye(2)
-    M_right = np.zeros((2, 154))
+    M_left = np.eye(6)
+    M_right = np.zeros((6, 150))
 
     M = np.hstack((M_left, M_right))
 
@@ -383,7 +383,9 @@ def QP_Controller(self):
 
     # ipdb.set_trace()
 
-    print np.dot(Cons7_A_right, qddot)
+    print qddot
+
+    # print np.dot(Cons7_A_right, qddot)
 
     return qddot, beta, lamda, tau
 
@@ -585,7 +587,7 @@ def Initial_Constraint_Eqn(sigma_init, state_init, sim_robot, world, x):
         y_val.append(Ori[i])
         y_type.append(0)
 
-    KE_ref = 0.1
+    KE_ref = 5
     KE_val = Kinetic_Energy_fn(sim_robot, x)
 
     y_val.append((KE_val - KE_ref) * (KE_val - KE_ref))

@@ -123,7 +123,8 @@ class MyGLViewer(GLSimulationPlugin):
 
         # sim.controller(0).setTorque(torque_t)
 
-        sim.controller(0).addMilestone(Pos_tp1, Vel_tp1)
+        sim.controller(0).setMilestone(Pos_tp1, Vel_tp1)
+        # sim.controller(0).addCubic(Pos_tp1, Vel_tp1)
 
 
         # ipdb.set_trace()
@@ -323,21 +324,27 @@ def QP_Controller(self):
     l = np.hstack([l1, l2, l3, l4, l5, l6, l7])
     u = np.hstack([u1, u2, u3, u4, u5, u6, u7])
 
-    K = 5
-
     # Now it is the test of the second objective function
-    M_left = np.eye(6)
-    M_right = np.zeros((6, 150))
+    M_left = np.eye(36)
+    M_right = np.zeros((36, 120))
 
-    M = np.hstack((M_left, M_right))
+    M = np.hstack((M_left, M_right))    # Here M is the selection matrix
+
 
     P = np.dot(np.transpose(M), M)
     P_sp = sparse.csc_matrix(P)
 
-    # Q_T_sp = sparse.csc_matrix(Q_T)
+
+    K = Damping_Gain_Matrix(self)
+    qdot = sim_robot.getVelocity()
+    qdot_array = np.transpose(np.matrix(qdot))
     # ipdb.set_trace()
 
-    q = np.zeros(self.m)
+    q_right = np.matmul(K, qdot_array)
+
+    q = np.matmul(np.transpose(M), q_right)
+
+    # q = np.zeros(self.m)
 
     prob = osqp.OSQP()
 
@@ -388,6 +395,22 @@ def QP_Controller(self):
     # print np.dot(Cons7_A_right, qddot)
 
     return qddot, beta, lamda, tau
+
+def Damping_Gain_Matrix(self):
+    # This function is used to generate the matrix needed to damp the acceleration
+    # Here we choose different gains for the unactuated DOF and actuated DOF
+
+    K_Unact = 10
+    K_Act = 10
+
+    K_raw = np.eye(36)
+    for i in range(0,6):
+        K_raw[i,i] = K_Unact
+    for i in range(6, self.State_Number):
+        K_raw[i,i] = K_Act
+    K_mat = np.asmatrix(K_raw)
+    return K_mat
+
 
 def Jacobian_Selection_Matrix(sigma):
     # This function is used to select the specific component of the Jacobian matrix
@@ -712,24 +735,26 @@ def main():
 
     # Now it is the validation of the feasibility of the given initial condition
 
-    # Init_Config, Init_Velocity = Robot_Init_Opt_fn(world, Sigma_Init, State_Init)
+    Init_Config, Init_Velocity = Robot_Init_Opt_fn(world, Sigma_Init, State_Init)
     #
     # Init_Config_File = open('Init_Config.txt', 'w')
     # for Config in Init_Config:
     #     print>>Init_Config_File, Config
+    # Init_Config_File.close()
     #
     # Init_Velocity_File = open('Init_Velocity.txt', 'w')
     # for Velocity in Init_Velocity:
     #     print>>Init_Velocity_File, Velocity
+    # Init_Velocity_File.close()
 
     # However, the easy method is to directly read in the initial configuration and the initial velocity
-    with open('./Init_Config.txt') as Init_Config_File:
-        Init_Config = Init_Config_File.read().splitlines()
-    Init_Config = [float(i) for i in Init_Config]
-
-    with open('./Init_Velocity.txt') as Init_Velocity_File:
-        Init_Velocity = Init_Velocity_File.read().splitlines()
-    Init_Velocity = [float(i) for i in Init_Velocity]
+    # with open('./Init_Config.txt') as Init_Config_File:
+    #     Init_Config = Init_Config_File.read().splitlines()
+    # Init_Config = [float(i) for i in Init_Config]
+    #
+    # with open('./Init_Velocity.txt') as Init_Velocity_File:
+    #     Init_Velocity = Init_Velocity_File.read().splitlines()
+    # Init_Velocity = [float(i) for i in Init_Velocity]
 
     # ipdb.set_trace()
 
@@ -892,6 +917,8 @@ def Contact_Jacobian_Matrix(sim_robot):
     All_Jac.append(Right_Hand_Link_Jac[2])
 
     return All_Jac
+
+
 
 def random_colors():
     ret = []

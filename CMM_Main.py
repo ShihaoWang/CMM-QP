@@ -610,7 +610,7 @@ def Initial_Constraint_Eqn(sigma_init, state_init, sim_robot, world, x):
         y_val.append(Ori[i])
         y_type.append(0)
 
-    KE_ref = 5
+    KE_ref = 7.5
     KE_val = Kinetic_Energy_fn(sim_robot, x)
 
     y_val.append((KE_val - KE_ref) * (KE_val - KE_ref))
